@@ -4,12 +4,15 @@
 // http://arduino.esp8266.com/stable/package_esp8266com_index.json
 // Then, select the board "NodeMCU 1.0: ESP12-E"
 // ESP-NOW for ESP32 has different API from the ESP8266 implementation
+// MAC address of this board 84:0D:8E:A9:B9:40
 
 #include <ESP8266WiFi.h>
 #include <espnow.h>
 
 #define RETRY_INTERVAL 5000
-#define SEND_INTERVAL 1000 
+#define SEND_INTERVAL 3000 
+
+#define LED_BUILTIN 2
 
 // Use the following pattern to create a Locally Administered MAC Address
 //   x2-xx-xx-xx-xx-xx
@@ -19,7 +22,8 @@
 // replace x with any hex value
 
 // the following three settings must match the slave settings
-uint8_t remoteMac[] = {0x82, 0x88, 0x88, 0x88, 0x88, 0x88};
+//uint8_t remoteMac[] = {0x82, 0x88, 0x88, 0x88, 0x88, 0x88};
+uint8_t remoteMac[] = {0x24, 0x0A, 0xC4, 0x59, 0x1A, 0x78};
 const uint8_t channel = 14;
 struct __attribute__((packed)) DataStruct {
   float temperature;
@@ -37,6 +41,8 @@ void sendData() {
   
   sentStartTime = micros();
   esp_now_send(NULL, bs, sizeof(myData)); // NULL means send to all peers
+
+  Serial.println("Data sent");
 }
 
 void sendCallBackFunction(const uint8_t* mac, const uint8_t sendStatus) {
@@ -51,30 +57,40 @@ void sendCallBackFunction(const uint8_t* mac, const uint8_t sendStatus) {
 void setup() {
   WiFi.mode(WIFI_STA); // Station mode for esp-now controller
   WiFi.disconnect();
-//
-//  Serial.begin(115200);
-//  Serial.println();
-//  Serial.println("ESP-Now Transmitter");
-//  Serial.printf("Transmitter mac: %s \n", WiFi.macAddress().c_str());
-//  Serial.printf("Receiver mac: %02x:%02x:%02x:%02x:%02x:%02x\n", remoteMac[0], remoteMac[1], remoteMac[2], remoteMac[3], remoteMac[4], remoteMac[5]);
-//  Serial.printf("WiFi Channel: %i\n", channel);
-//
-//  if (esp_now_init() != 0) {
-//    Serial.println("ESP_Now init failed...");
-//    delay(RETRY_INTERVAL);
-//    ESP.restart();
-//  }
-//    
-//  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-//  esp_now_add_peer(remoteMac, ESP_NOW_ROLE_SLAVE, channel, NULL, 0);
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  Serial.begin(115200);
+  Serial.println();
+  Serial.println("ESP-Now Transmitter");
+  Serial.printf("Transmitter mac: %s \n", WiFi.macAddress().c_str());
+  Serial.printf("Receiver mac: %02x:%02x:%02x:%02x:%02x:%02x\n", remoteMac[0], remoteMac[1], remoteMac[2], remoteMac[3], remoteMac[4], remoteMac[5]);
+  Serial.printf("WiFi Channel: %i\n", channel);
+
+  if (esp_now_init() != 0) {
+    Serial.println("ESP_Now init failed...");
+    delay(RETRY_INTERVAL);
+    ESP.restart();
+  }
+    
+  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+  esp_now_add_peer(remoteMac, ESP_NOW_ROLE_SLAVE, channel, NULL, 0);
 //  esp_now_register_send_cb(sendCallBackFunction);
+  Serial.println("Mac Address in Station: ");
+  Serial.println(WiFi.macAddress());
 }
 
 void loop() {
-//  if (millis() - lastSentTime >= SEND_INTERVAL) {
-//    lastSentTime += SEND_INTERVAL;
-//    myData.temperature = 32.3;   // replace this with your actual sensor reading code
-//    myData.humidity = 70.8;      // replace this with your actual sensor reading code
-//    sendData();  
-//  }
+  if (millis() - lastSentTime >= SEND_INTERVAL) {
+    lastSentTime += SEND_INTERVAL;
+    myData.temperature = 32.3;   // replace this with your actual sensor reading code
+    myData.humidity = 70.8;      // replace this with your actual sensor reading code
+    sendData();  
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(500);
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+
+  
 }
