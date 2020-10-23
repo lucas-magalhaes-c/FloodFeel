@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // esp8266-espnow-transmitter.ino
 // This code works for ESP8266 only.
 // Configure NodeMCU ESP8266 board (Add to File > Preferences > Aditional Boards Manager URLs, then Tools > Board Manager > search for esp and install it)
