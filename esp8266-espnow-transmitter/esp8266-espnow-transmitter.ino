@@ -42,7 +42,11 @@ void sendData() {
   sentStartTime = micros();
   esp_now_send(NULL, bs, sizeof(myData)); // NULL means send to all peers
 
-  Serial.println("Data sent");
+  Serial.println("Data sent to all peers added");
+  
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(50);
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 void sendCallBackFunction(const uint8_t* mac, const uint8_t sendStatus) {
@@ -76,8 +80,6 @@ void setup() {
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
   esp_now_add_peer(remoteMac, ESP_NOW_ROLE_SLAVE, channel, NULL, 0);
 //  esp_now_register_send_cb(sendCallBackFunction);
-  Serial.println("Mac Address in Station: ");
-  Serial.println(WiFi.macAddress());
 }
 
 void loop() {
@@ -86,11 +88,6 @@ void loop() {
     myData.temperature = 32.3;   // replace this with your actual sensor reading code
     myData.humidity = 70.8;      // replace this with your actual sensor reading code
     sendData();  
-
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(500);
-    digitalWrite(LED_BUILTIN, LOW);
   }
-
   
 }
