@@ -25,7 +25,7 @@ def main (request):
     for doc in docs:
         
         doc_dict = doc.to_dict()
-
+        
         # extracts date in format YYYY-MM-DD
         if isinstance(doc_dict["date"], DatetimeWithNanoseconds):
             table_date = str(doc_dict["date"].year) +"-"+ str(doc_dict["date"].month) +"-"+ str(doc_dict["date"].day) 
@@ -46,7 +46,8 @@ def main (request):
             "collector_node_id": doc_dict["collector_node_id"],
             "central_node_id": doc_dict["central_node_id"],
             "water_level": doc_dict["water_level"],
-            "lat_long": doc_dict["lat_long"]
+            "lat_long": doc_dict["lat_long"],
+            "location_id": doc_dict["location_id"]
         })
 
     # Checks if it's empty
@@ -61,7 +62,7 @@ def main (request):
 
         if success == True:
             # Update fs_state to sent to bq for all docs
-            FH.set_sent_to_bq_fs_state(collection='sensors_data', doc_ids=doc_ids_separated_by_date[date])
+            FH.delete_documents(collection='sensors_data', doc_ids=doc_ids_separated_by_date[date])
             print(f"Done. Data from date {date} was sent to Big Query")
         else:
             print(f"Failed. Data from date {date} wasn't sent to Big Query")
