@@ -26,7 +26,7 @@ void receiveCallBackFunction(const uint8_t *senderMac, const uint8_t *incomingDa
 //  memcpy(&myData, incomingData, sizeof(myData));
   memcpy(&myData, incomingData, len); 
   
-  Serial.printf("Transmitter MacAddr: %02x:%02x:%02x:%02x:%02x:%02x\n", senderMac[0], senderMac[1], senderMac[2], senderMac[3], senderMac[4], senderMac[5]);
+  Serial.printf("Transmitter mac address: %02x:%02x:%02x:%02x:%02x:%02x\n", senderMac[0], senderMac[1], senderMac[2], senderMac[3], senderMac[4], senderMac[5]);
   
   // Prints the distance on the Serial Monitor
   Serial.print("Distance: ");
