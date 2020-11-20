@@ -1,0 +1,8 @@
+{
+    "bq_project": {
+        "dataset_id": "<dataset_id>",
+        "table_id_patterns": {
+            "<table_id>": "<table_id>_"
+        }
+    }
+}
