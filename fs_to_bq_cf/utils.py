@@ -86,7 +86,8 @@ class BigQueryHandler():
                 bigquery.SchemaField("collector_node_id", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("central_node_id", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("water_level", "INTEGER", mode="REQUIRED"),
-                bigquery.SchemaField("lat_long", "STRING", mode="REQUIRED")
+                bigquery.SchemaField("lat_long", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("location_id", "STRING", mode="REQUIRED")
             ]
         else:
             print("Schema not found for the table type")
@@ -134,18 +135,22 @@ class FirestoreHandler():
 
         doc_ref = self.db.collection(collection).document(data["collector_node_id"]+":"+ data["timestamp_ms"])
 
-        if data_type == "sensor":
-            doc_ref.set({
-                'date': data["date"],
-                'timestamp_ms': data["timestamp_ms"],
-                'collector_node_id': data["collector_node_id"],
-                'central_node_id': data["central_node_id"],
-                'water_level': data["water_level"],
-                'lat_long': data["lat_long"],
-                'fs_state': 1
-            },merge=True)
-        else:
-            print(f"data_type not recognized {data_type}")
+        try:
+            if data_type == "sensor":
+                doc_ref.set({
+                    'date': data["date"],
+                    'timestamp_ms': data["timestamp_ms"],
+                    'collector_node_id': data["collector_node_id"],
+                    'central_node_id': data["central_node_id"],
+                    'water_level': data["water_level"],
+                    'lat_long': data["lat_long"],
+                    'location_id': data["location_id"],
+                    'fs_state': 1
+                },merge=True)
+            else:
+                print(f"data_type not recognized {data_type}")
+        except:
+            print("Missing field for the document. Data:",data)
     
     def get_documents(self,collection):
         
@@ -174,4 +179,11 @@ class FirestoreHandler():
             doc_ref.set({
                 'fs_state': 2
             },merge=True)
+    
+    def delete_documents(self, collection, doc_ids):
+
+        for doc_id in doc_ids:
+            doc_ref = self.db.collection(collection).document(doc_id)
+
+            doc_ref.delete()
         
