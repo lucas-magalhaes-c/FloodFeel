@@ -1,106 +1,233 @@
-// esp8266-espnow-transmitter.ino
-// This code works for ESP8266 only.
-// Configure NodeMCU ESP8266 board (Add to File > Preferences > Aditional Boards Manager URLs, then Tools > Board Manager > search for esp and install it)
-// http://arduino.esp8266.com/stable/package_esp8266com_index.json
-// Then, select the board "NodeMCU 1.0: ESP12-E"
-// ESP-NOW for ESP32 has different API from the ESP8266 implementation
-// MAC address of this board 84:0D:8E:A9:B9:40
+/*
+ * This ESP-NOW master scan for slaves (by their AP SSID) so you don't need to hard-code the slave MAC address.
+ * Make sure to set the channel number of your Wi-Fi network.
+ */
 
+#include <Arduino.h>
 #include <ESP8266WiFi.h>
-#include <espnow.h>
-
+#include <Ticker.h>
+extern "C" {
+  #include <espnow.h>
+  #include <user_interface.h>
+}
 
 #define RETRY_INTERVAL 5000
-#define SEND_INTERVAL 3000 
+#define SEND_INTERVAL 3000
 
+unsigned long lastSentTime = 0;
+
+typedef struct esp_now_peer_info {
+    u8 peer_addr[6];    /**< ESPNOW peer MAC address that is also the MAC address of station or softap */
+    uint8_t channel;                        /**< Wi-Fi channel that peer uses to send/receive ESPNOW data. If the value is 0,
+                                                 use the current channel which station or softap is on. Otherwise, it must be
+                                                 set as the channel that station or softap is on. */
+} esp_now_peer_info_t;
+
+// Global copy of slave
+#define NUMSLAVES 20
+esp_now_peer_info_t slaves[NUMSLAVES] = {};
+int SlaveCnt = 0;
 
 const int trigger_pin = D6;
 const int echo_pin = D7;
 
 // defines variables
 long duration;
-int distance;
+uint16_t distance;
 
 #define LED_BUILTIN 2
 
-// Use the following pattern to create a Locally Administered MAC Address
-//   x2-xx-xx-xx-xx-xx
-//   x6-xx-xx-xx-xx-xx
-//   xA-xx-xx-xx-xx-xx
-//   xE-xx-xx-xx-xx-xx
-// replace x with any hex value
+#define CHANNEL 1
 
-// the following three settings must match the slave settings (central node receiver)
-uint8_t remoteMac[] = {0x24, 0x0A, 0xC4, 0x59, 0x1A, 0x78};
-
-const uint8_t channel = 14;
-struct __attribute__((packed)) DataStruct {
-  int distance;
-  String transmitter_mac;
-};
-
-DataStruct myData;
-
-unsigned long sentStartTime;
-unsigned long lastSentTime;
-
-void sendData() {
-  uint8_t bs[sizeof(myData)];
-  memcpy(bs, &myData, sizeof(myData));
-  
-  sentStartTime = micros();
-  esp_now_send(NULL, bs, sizeof(myData)); // NULL means send to all peers
-
-  Serial.println("Data sent to all peers added");
-  
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(50);
-  digitalWrite(LED_BUILTIN, LOW);
+void printMacAddress(uint8_t* macaddr) {
+  Serial.print("{");
+  for (int i = 0; i < 6; i++) {
+    Serial.print("0x");
+    Serial.print(macaddr[i], HEX);
+    if (i < 5) Serial.print(',');
+  }
+  Serial.println("};");
 }
 
-void sendCallBackFunction(const uint8_t* mac, const uint8_t sendStatus) {
-  unsigned long sentEndTime = micros();
-//  Serial.printf("Send To: %02x:%02x:%02x:%02x:%02x:%02x ", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-//  Serial.printf("Temperature: %.2f ", myData.temperature);
-//  Serial.printf("Humidity: %.2f ", myData.humidity);
-//  Serial.printf("Trip micros: %4lu, ", sentEndTime - sentStartTime);
-//  Serial.printf("Status: %s\n", (sendStatus == 0 ? "Success" : "Failed"));
+// Init ESP Now with fallback
+void InitESPNow() {
+  if (esp_now_init() == 0) {
+    Serial.println("ESPNow Init Success");
+  }
+  else {
+    Serial.println("ESPNow Init Failed");
+    ESP.restart();
+  }
+  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+}
+
+// Scan for slaves in AP mode
+void ScanForSlave() {
+  int8_t scanResults = WiFi.scanNetworks();
+  //reset slaves
+  memset(slaves, 0, sizeof(slaves));
+  SlaveCnt = 0;
+  Serial.println("");
+  if (scanResults == 0) {
+    Serial.println("No WiFi devices in AP Mode found");
+  } else {
+    Serial.print("Found "); Serial.print(scanResults); Serial.println(" devices ");
+    for (int i = 0; i < scanResults; ++i) {
+      // Print SSID and RSSI for each device found
+      String SSID = WiFi.SSID(i);
+      int32_t RSSI = WiFi.RSSI(i);
+      String BSSIDstr = WiFi.BSSIDstr(i);
+      Serial.print("SSID: ");
+      Serial.println(SSID);
+      delay(10);
+      // Check if the current device starts with `Slave`
+      if (SSID.indexOf("Slave") == 0) {
+        // SSID of interest
+        Serial.print(i + 1); Serial.print(": ");
+        Serial.print(SSID); Serial.print(" [");
+        Serial.print(BSSIDstr); Serial.print("]");
+        Serial.print(" ("); Serial.print(RSSI);
+        Serial.print(")"); Serial.println("");
+        // Get BSSID => Mac Address of the Slave
+        
+        char macPart[3];
+
+        macPart[0] = (char)BSSIDstr[0];
+        macPart[1] = (char)BSSIDstr[1];
+        macPart[2] = '\0';
+        slaves[SlaveCnt].peer_addr[0] = strtoul(macPart,NULL,16);
+        macPart[0] = (char)BSSIDstr[3];
+        macPart[1] = (char)BSSIDstr[4];
+        slaves[SlaveCnt].peer_addr[1] = strtoul(macPart,NULL,16);
+        macPart[0] = (char)BSSIDstr[6];
+        macPart[1] = (char)BSSIDstr[7];
+        slaves[SlaveCnt].peer_addr[2] = strtoul(macPart,NULL,16);
+        macPart[0] = (char)BSSIDstr[9];
+        macPart[1] = (char)BSSIDstr[10];
+        slaves[SlaveCnt].peer_addr[3] = strtoul(macPart,NULL,16);
+        macPart[0] = (char)BSSIDstr[12];
+        macPart[1] = (char)BSSIDstr[13];
+        slaves[SlaveCnt].peer_addr[4] = strtoul(macPart,NULL,16);
+        macPart[0] = (char)BSSIDstr[15];
+        macPart[1] = (char)BSSIDstr[16];
+        slaves[SlaveCnt].peer_addr[5] = strtoul(macPart,NULL,16);
+
+        SlaveCnt++;
+      }
+    }
+  }
+
+  if (SlaveCnt > 0) {
+    Serial.print(SlaveCnt); Serial.println(" Slave(s) found, processing..");
+  } else {
+    Serial.println("No Slave Found, trying again.");
+  }
+
+  // clean up ram
+  WiFi.scanDelete();
+}
+
+// Check if the slave is already paired with the master.
+// If not, pair the slave with master
+void manageSlave() {
+  if (SlaveCnt > 0) {
+    for (int i = 0; i < SlaveCnt; i++) {
+      const esp_now_peer_info_t *peer = &slaves[i];
+      u8 *peer_addr = slaves[i].peer_addr;
+      Serial.print("Processing: ");
+      for (int ii = 0; ii < 6; ++ii ) {
+        Serial.print((uint8_t) slaves[i].peer_addr[ii], HEX);
+        if (ii != 5) Serial.print(":");
+      }
+      Serial.print(" Status: ");
+      // check if the peer exists
+      bool exists = esp_now_is_peer_exist((u8*)peer_addr);
+      if (exists) {
+        // Slave already paired.
+        Serial.println("Already Paired");
+      } else {
+        // Slave not paired, attempt pair
+        int addStatus = esp_now_add_peer((u8*)peer_addr, ESP_NOW_ROLE_CONTROLLER, CHANNEL, NULL, 0);
+        if (addStatus == 0) {
+          // Pair success
+          Serial.println("Pair success");
+        } else {
+          Serial.println("Pair failed");
+        }
+        delay(100);
+      }
+    }
+  } else {
+    // No slave found to process
+    Serial.println("No Slave found to process");
+  }
+}
+
+// send data
+void sendData(uint16_t distance) {
+  digitalWrite(LED_BUILTIN, HIGH);
+  uint8_t bs[sizeof(int)];
+  memcpy(bs, &distance, sizeof(uint16_t));
+  for (int i = 0; i < SlaveCnt; i++) {
+    u8 *peer_addr = slaves[i].peer_addr;
+    if (i == 0) { // print only for first slave
+      Serial.print("Sending distance: ");
+      Serial.println(distance);
+    }
+    int result = esp_now_send(peer_addr, bs, sizeof(uint16_t));
+    Serial.print("Send Status: ");
+    if (result ==0) {
+      Serial.println("Success " + String(result));
+    } else {
+      Serial.println("Failed " + String(result));
+    }
+    delay(100);
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+}
+
+// callback when data is sent from Master to Slave
+esp_now_send_cb_t OnDataSent(const uint8_t *mac_addr, u8 status) {
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+  Serial.print("Last Packet Sent to: "); Serial.println(macStr);
+  Serial.print("Last Packet Send Status: "); Serial.println(status == 0 ? "Delivery Success" : "Delivery Fail");
 }
 
 void setup() {
   Serial.begin(115200);
-  
-  WiFi.mode(WIFI_STA); // Station mode for esp-now controller
-  WiFi.disconnect();
-
   pinMode(LED_BUILTIN, OUTPUT);
-
-  
-  Serial.println();
-  Serial.println("ESP-Now Transmitter");
-  Serial.printf("Transmitter mac: %s \n", WiFi.macAddress().c_str());
-  myData.transmitter_mac = WiFi.macAddress().c_str();
-  Serial.printf("Receiver mac: %02x:%02x:%02x:%02x:%02x:%02x\n", remoteMac[0], remoteMac[1], remoteMac[2], remoteMac[3], remoteMac[4], remoteMac[5]);
-  Serial.printf("WiFi Channel: %i\n", channel);
-
-  if (esp_now_init() != 0) {
-    Serial.println("ESP_Now init failed...");
-    delay(RETRY_INTERVAL);
-    ESP.restart();
-  }
-    
-  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-  esp_now_add_peer(remoteMac, ESP_NOW_ROLE_SLAVE, channel, NULL, 0);
-
   pinMode(trigger_pin, OUTPUT); // Sets the trigPin as an Output
   pinMode(echo_pin, INPUT); // Sets the echoPin as an Input
-
+  //Set device in STA mode to begin with
+  WiFi.mode(WIFI_STA);
+  Serial.println("ESPNow/Multi-Slave/Master Example");
+  // This is the mac address of the Master in Station Mode
+  Serial.print("STA MAC: "); Serial.println(WiFi.macAddress());
+  // Init ESPNow with a fallback logic
+  InitESPNow();
+  // Once ESPNow is successfully Init, we will register for Send CB to
+  // get the status of Trasnmitted packet
+  // esp_now_register_send_cb(OnDataSent);
+  esp_now_register_send_cb([](uint8_t* macaddr, uint8_t status) {
+    printMacAddress(macaddr);
+    static uint32_t ok = 0;
+    static uint32_t fail = 0;
+    if (status == 0) {
+      Serial.println("ESPNOW: SEND_OK");
+      ok++;
+    }
+    else {
+      Serial.println("ESPNOW: SEND_FAILED");
+      fail++;
+    }
+    Serial.printf("[SUCCESS] = %lu/%lu \r\n", ok, ok+fail);
+  });
 }
 
 void loop() {
-  
   if (millis() - lastSentTime >= SEND_INTERVAL) {
-    
     // Clears the trigPin
     digitalWrite(trigger_pin, LOW);
     delayMicroseconds(2);
@@ -121,17 +248,23 @@ void loop() {
       distance = 0;
     }
     
-    lastSentTime += SEND_INTERVAL;
-    myData.distance = distance;   // replace this with your actual sensor reading code
-    // myData.transmitter_mac = transmitter_mac;      // replace this with your actual sensor reading code
-
-    // Prints the distance on the Serial Monitor
-    Serial.print("Distance: ");
-    Serial.println(myData.distance);
-    // Prints the distance on the Serial Monitor
-    Serial.print("Trasmitter mac adress: ");
-    Serial.println(myData.transmitter_mac);
-    sendData();  
+    // In the loop we scan for slave
+    ScanForSlave();
+    // If Slave is found, it would be populate in `slave` variable
+    // We will check if `slave` is defined and then we proceed further
+    if (SlaveCnt > 0) { // check if slave channel is defined
+      // `slave` is defined
+      // Add slave as peer if it has not been added already
+      manageSlave();
+      // pair success or already paired
+      // Prints the distance on the Serial Monitor
+      Serial.print("Distance: ");
+      Serial.println(distance);
+      // Send data to device
+      sendData(distance);
+      lastSentTime = millis();
+    } else {
+      // No slave found to process
+    }  
   }
-  
 }

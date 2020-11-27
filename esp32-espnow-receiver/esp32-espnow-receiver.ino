@@ -1,71 +1,116 @@
-// esp32-espnow-receiver.ino
-// This code works for ESP32 only.
-// Configure NodeMCU ESP32 board (Add to File > Preferences > Aditional Boards Manager URLs (insert the bellow link here), then Tools > Board Manager > search for esp and install it)
-// https://dl.espressif.com/dl/package_esp32_index.json
-// ESP-NOW for ESP8266 has different API from the ESP32 implementation
-// Receiver_MAC: 24:0A:C4:59:1A:78
-// Transmiter_MAC: 
+/*
+ * This ESP-NOW slave is an access point (AP) with SSID Slave:<<AP_MAC_ADDRESS>>.
+ * You don't need to hard-code the master's MAC address.
+ * It also works as a station, being able to connect to a Wi-Fi network.
+ * Make sure to set the channel number, the SSID and the password of your Wi-Fi network.
+ */
 
-#include <WiFi.h>
 #include <esp_now.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 
-#define RETRY_INTERVAL 5000
-#define LED_BUILTIN 2
+// Channel number is automatic. Check Wi-Fi channel print on Serial Monitor.
+#define CHANNEL 1
 
-// the following 3 settings must match transmitter's settings
-uint8_t mac[] = {0x84, 0x0D, 0x8E, 0xA9, 0xB9, 0x40};
-const uint8_t channel = 14;
-struct __attribute__((packed)) DataStruct {
-  int distance;
-  String transmitter_mac;
-};
+HTTPClient http;
 
-DataStruct myData;
+// Flag that indicates if there is data to be sent to the cloud
+bool dataToSend = false;
 
-void receiveCallBackFunction(const uint8_t *senderMac, const uint8_t *incomingData, int len) {
-//  memcpy(&myData, incomingData, sizeof(myData));
-  memcpy(&myData, incomingData, len); 
-  
-  Serial.printf("Transmitter mac address: %02x:%02x:%02x:%02x:%02x:%02x\n", senderMac[0], senderMac[1], senderMac[2], senderMac[3], senderMac[4], senderMac[5]);
-  
-  // Prints the distance on the Serial Monitor
-  Serial.print("Distance: ");
-  Serial.println(myData.distance);
-  // Prints the distance on the Serial Monitor
-  Serial.print("Trasmitter mac adress: ");
-  Serial.println(myData.transmitter_mac);
-  
-  digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(50);
-  digitalWrite(LED_BUILTIN, LOW);   // turn the LED off (LOW is the voltage level)
+// SSID and password of your Wi-Fi network
+const char* ssid = "WIFI-SSID";
+const char* password = "WIFI-PASSWORD";
+
+// Data received via ESP-NOW
+uint16_t distance;
+
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len);
+
+// Init ESP Now with fallback
+void InitESPNow() {
+  if (esp_now_init() == ESP_OK) {
+    Serial.println("ESPNow Init Success");
+  }
+  else {
+    Serial.println("ESPNow Init Failed");
+    ESP.restart();
+  }
+}
+
+// config AP SSID
+void configDeviceAP() {
+  String Prefix = "Slave:";
+  String Mac = WiFi.macAddress();
+  String SSID = Prefix + Mac;
+  String Password = "123456789"; // Not sure where this password is used
+  bool result = WiFi.softAP(SSID.c_str(), Password.c_str(), CHANNEL, 0);
+  if (!result) {
+    Serial.println("AP Config failed.");
+  } else {
+    Serial.println("AP Config Success. Broadcasting with AP: " + String(SSID));
+  }
 }
 
 void setup() {
   Serial.begin(115200);
-  // initialize digital pin LED_BUILTIN as an output.
-  pinMode(LED_BUILTIN, OUTPUT);
-  
-  Serial.print("Starting..."); 
-  delay(500); 
-  
-  WiFi.mode(WIFI_STA);
-  //  WiFi.disconnect();
-  
-  Serial.println("ESP-Now Receiver");
-  
-  Serial.println("Mac Address in Station: "); 
-  Serial.println(WiFi.macAddress());
-  
-  if (esp_now_init() != 0) {
-    Serial.println("ESP_Now init failed...");
-    delay(RETRY_INTERVAL);
-    ESP.restart();
-  }
+  Serial.println("ESPNow/Basic/Slave Example");
 
-  esp_now_register_recv_cb(receiveCallBackFunction);
-  Serial.println("Slave ready. Waiting for messages...");
+  //Set device in AP mode to begin with
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Setting as a Wi-Fi Station..");
+  }
+  Serial.print("Station IP Address: ");
+  Serial.println(WiFi.localIP());
+  Serial.print("Wi-Fi Channel: ");
+  Serial.println(WiFi.channel());
+
+  // configure device AP mode
+  configDeviceAP();
+  // This is the mac address of the Slave in AP Mode
+  Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
+
+  // Init ESPNow with a fallback logic
+  InitESPNow();
+  // Once ESPNow is successfully Init, we will register for recv CB to
+  // get recv packer info.
+  esp_now_register_recv_cb(OnDataRecv);
+}
+
+// callback when data is recv from Master
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  memcpy(&distance, data, data_len);
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+  Serial.print("Last Packet Recv from: "); Serial.println(macStr);
+  // Prints the distance on the Serial Monitor
+  Serial.print("Distance: ");
+  Serial.println(distance);
+  Serial.println("");
+  dataToSend = true;
 }
 
 void loop() {
-  delay(3000);
+  if (dataToSend) {
+    http.begin("http://loripsum.net/api/short/1");
+  
+      // Send HTTP GET request
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode>0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      String payload = http.getString();
+      Serial.println(payload);
+    }
+    else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+    }
+    http.end();
+    dataToSend = false;
+  }
 }
