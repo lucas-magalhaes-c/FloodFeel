@@ -1,3 +1,6 @@
 {
-
+    "collector_nodes": {
+        "<collector_1_mac_id": {"lat_long": "<lat1>,<long1>", "location_id": "Place 1"},
+        "collector_2_mac_id": {"lat_long": "<lat2>,<long2>", "location_id": "Place 2"}
+    }        
 }
