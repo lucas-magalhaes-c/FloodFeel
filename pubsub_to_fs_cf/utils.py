@@ -66,7 +66,7 @@ from firebase_admin import firestore
 
 class FirestoreHandler():
     def __init__(self):
-        service_account_path = 'service_account_local.json' if "-local" in sys.argv else 'service_account.json'
+        service_account_path = 'service_account_local.json' if "-local" in sys.argv or "-sim" in sys.argv  else 'service_account.json'
 
         # firestore document state (fs_state)
         self.fs_state = {
@@ -79,21 +79,22 @@ class FirestoreHandler():
         sa_json = json.loads(sa_file.read())
         project_id = sa_json['project_id']
 
-        if "-local" not in sys.argv:
-            # Use the application default credentials, in GCP
-            cred = credentials.ApplicationDefault()
-            firebase_admin.initialize_app(cred, {
-            'projectId': project_id,
-            })
-
-            self.db = firestore.client()
-        else:
+        if "-local" in sys.argv or "-sim" in sys.argv:
             # Testing locally
             # Use a service account
             cred = credentials.Certificate(service_account_path)
             firebase_admin.initialize_app(cred)
 
-            self.db = firestore.client()
+        else:
+            # Use the application default credentials, in GCP
+            if (not len(firebase_admin._apps)):
+                cred = credentials.ApplicationDefault()
+                firebase_admin.initialize_app(
+                    cred, 
+                    {'projectId': project_id}
+                )
+
+        self.db = firestore.client()
     
     def add_document_to_collection(self,collection,data,data_type):
 
@@ -143,4 +144,11 @@ class FirestoreHandler():
             doc_ref.set({
                 'fs_state': 2
             },merge=True)
+    
+    def delete_documents(self, collection, doc_ids):
+
+        for doc_id in doc_ids:
+            doc_ref = self.db.collection(collection).document(doc_id)
+
+            doc_ref.delete()
         
