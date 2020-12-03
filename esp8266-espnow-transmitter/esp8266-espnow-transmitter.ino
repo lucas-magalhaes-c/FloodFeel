@@ -37,6 +37,7 @@ uint16_t distance;
 
 #define LED_BUILTIN 2
 
+// The channel must match the receiver
 #define CHANNEL 1
 
 void printMacAddress(uint8_t* macaddr) {

@@ -8,11 +8,13 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <ArduinoJson.h>
 
 // Channel number is automatic. Check Wi-Fi channel print on Serial Monitor.
 #define CHANNEL 1
 
 HTTPClient http;
+const char* serverUrl = "https://us-central1-floodfeel.cloudfunctions.net/FloodFeel-SensorsData";
 
 // Flag that indicates if there is data to be sent to the cloud
 bool dataToSend = false;
@@ -23,6 +25,9 @@ const char* password = "WIFI-PASSWORD";
 
 // Data received via ESP-NOW
 uint16_t distance;
+String masterMac;
+String slaveMac;
+char buffer[130];
 
 void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len);
 
@@ -86,6 +91,9 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
   snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
            mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
   Serial.print("Last Packet Recv from: "); Serial.println(macStr);
+
+  masterMac = macStr;
+  masterMac.toUpperCase();
   // Prints the distance on the Serial Monitor
   Serial.print("Distance: ");
   Serial.println(distance);
@@ -95,21 +103,20 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
 
 void loop() {
   if (dataToSend) {
-    http.begin("http://loripsum.net/api/short/1");
-  
-      // Send HTTP GET request
-    int httpResponseCode = http.GET();
-    
-    if (httpResponseCode>0) {
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
-      String payload = http.getString();
-      Serial.println(payload);
-    }
-    else {
-      Serial.print("Error code: ");
-      Serial.println(httpResponseCode);
-    }
+    slaveMac = WiFi.macAddress();
+    Serial.print("collector_node_id: "); Serial.println(masterMac);
+    Serial.print("central_node_id: "); Serial.println(slaveMac);
+    Serial.print("water_level: "); Serial.println(distance);
+    StaticJsonDocument<130> doc;
+    doc["collector_node_id"] = masterMac;
+    doc["central_node_id"] = slaveMac;
+    doc["water_level"] = distance;
+    serializeJson(doc, buffer);
+    Serial.print("Serialized: "); Serial.println(buffer);
+    http.begin(serverUrl);
+    http.addHeader("Content-Type", "application/json");
+    int httpResponseCode = http.POST(buffer);
+    Serial.print("HTTP Response code: "); Serial.println(httpResponseCode);
     http.end();
     dataToSend = false;
   }
