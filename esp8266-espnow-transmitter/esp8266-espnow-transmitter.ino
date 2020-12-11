@@ -44,6 +44,7 @@ void printMacAddress(uint8_t* macaddr) {
   Serial.print("{");
   for (int i = 0; i < 6; i++) {
     Serial.print("0x");
+    if (macaddr[i] <= 15) Serial.print("0");
     Serial.print(macaddr[i], HEX);
     if (i < 5) Serial.print(',');
   }
@@ -137,7 +138,9 @@ void manageSlave() {
       u8 *peer_addr = slaves[i].peer_addr;
       Serial.print("Processing: ");
       for (int ii = 0; ii < 6; ++ii ) {
-        Serial.print((uint8_t) slaves[i].peer_addr[ii], HEX);
+        int mac_part = (uint8_t) slaves[i].peer_addr[ii];
+        if(mac_part <= 15) Serial.print("0");
+        Serial.print(mac_part, HEX);
         if (ii != 5) Serial.print(":");
       }
       Serial.print(" Status: ");
@@ -174,6 +177,8 @@ void sendData(uint16_t distance) {
     if (i == 0) { // print only for first slave
       Serial.print("Sending distance: ");
       Serial.println(distance);
+      Serial.print("Sending to channel: ");
+      Serial.println(CHANNEL);
     }
     int result = esp_now_send(peer_addr, bs, sizeof(uint16_t));
     Serial.print("Send Status: ");
