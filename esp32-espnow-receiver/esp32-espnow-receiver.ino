@@ -13,6 +13,8 @@
 // Channel number is automatic. Check Wi-Fi channel print on Serial Monitor.
 #define CHANNEL 1
 
+#define LED 2
+
 HTTPClient http;
 const char* serverUrl = "https://us-central1-floodfeel.cloudfunctions.net/FloodFeel-SensorsData";
 
@@ -20,8 +22,8 @@ const char* serverUrl = "https://us-central1-floodfeel.cloudfunctions.net/FloodF
 bool dataToSend = false;
 
 // SSID and password of your Wi-Fi network
-const char* ssid = "WIFI-SSID";
-const char* password = "WIFI-PASSWORD";
+const char* ssid = "Hackers";
+const char* password = "@672elZ3xpto";
 
 // Data received via ESP-NOW
 uint16_t distance;
@@ -30,7 +32,7 @@ String slaveMac;
 char buffer[130];
 
 void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len);
-
+  
 // Init ESP Now with fallback
 void InitESPNow() {
   if (esp_now_init() == ESP_OK) {
@@ -60,9 +62,12 @@ void setup() {
   Serial.begin(115200);
   Serial.println("ESPNow/Basic/Slave Example");
 
+  // initialize digital pin LED_BUILTIN as an output.
+  pinMode(LED, OUTPUT);
+
   //Set device in AP mode to begin with
   WiFi.mode(WIFI_AP_STA);
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid, password, CHANNEL);
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
     Serial.println("Setting as a Wi-Fi Station..");
@@ -86,6 +91,11 @@ void setup() {
 
 // callback when data is recv from Master
 void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  digitalWrite(LED, HIGH);   // turn the LED on (HIGH is the voltage level)
+  delay(100);                       // wait for a second
+  digitalWrite(LED, LOW);    // turn the LED off by making the voltage LOW
+  delay(100);                       // wait for a second
+  
   memcpy(&distance, data, data_len);
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
@@ -120,4 +130,5 @@ void loop() {
     http.end();
     dataToSend = false;
   }
+  
 }
