@@ -4,10 +4,6 @@ from datetime import datetime, timedelta
 import sys
 import json
 
-now =  datetime.now()
-date = datetime.now().strftime('%Y-%m-%d')
-timestamp_ms = int((now - timedelta(hours=3)).timestamp() * 1000)
-
 # start_time = datetime.strptime('20/11/20 18:35:00', '%d/%m/%y %H:%M:%s') - timedelta(hours=3) #BRT=GMT-3
 # end_time = datetime.strptime('20/11/20 18:36:00', '%d/%m/%y %H:%M:%S') - timedelta(hours=3) #BRT=GMT-3
 
@@ -37,6 +33,10 @@ def main (request):
         else:
             data_to_upload = request.get_json()
 
+        now =  datetime.now()
+        date = datetime.now().strftime('%Y-%m-%d')
+        timestamp_ms = round((now - timedelta(hours=3)).timestamp() * 1000)
+
         data_to_upload["date"] = date
         data_to_upload["timestamp_ms"] = timestamp_ms
 
@@ -47,6 +47,8 @@ def main (request):
             print("Collector id missing in config. Using default for missing values")
             data_to_upload["lat_long"] = "0,0"
             data_to_upload["location_id"] = "Ausente"
+        
+        print("Uploading data:", data_to_upload)
 
     FH = FirestoreHandler()
     try:
@@ -65,11 +67,12 @@ def main (request):
                     data_type="sensor"
             )
             print(f"Document uploaded.")
+            return '', 201
     except:
         print(f"Failed to upload {len(data_to_upload)} documents")
+        return '', 500
     
-    return
-    
+
     
 if "-local" in sys.argv or "-sim" in sys.argv:
     main(None)
